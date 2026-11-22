@@ -1996,7 +1996,9 @@ function drawTitle() {
   txt('HOW TO PLAY', BW / 2, y + 5, C.ink, 2, 'c');
   titleBtns.push({ x: bx, y, w: bw, h: 20, fn: () => { howOpen = true; } });
   y += 34;
-  const hs = String(best).padStart(5, '0');
+  // front-page HI-SCORE: the worldwide #1 when the online board is reachable, otherwise this phone's best
+  const topScore = boardOnline && board.length ? Math.max(board[0].s | 0, 0) : best;
+  const hs = String(Math.min(99999, topScore)).padStart(5, '0');
   const hfh = FH(SMALLF), btnBot = y - 34 + 20, numTop = y + hfh + 4;
   const ly = Math.round((btnBot + numTop - hfh) / 2);   // label dead centre between HOW TO PLAY and the number
   txtF('HI-SCORE  > TOP 10', BW / 2, ly, C.shade, SMALLF, 'c');

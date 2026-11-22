@@ -574,7 +574,9 @@ async function addScore(name, sc) {
 }
 let boardNote = '';
 fetchBoard();
-const demo = mk(DEFS[0]); demo.state = 'running'; demo.latch = 1; demo.pos = demo.tgt; demo.hAng = demo.target; demo.spin = 1;
+const demo = mk(DEFS[0]);
+function resetDemo() { const keep = { w: demo.w, x: demo.x, y: demo.y, hr: demo.hr, cpPx: demo.cpPx, sqPx: demo.sqPx }; Object.assign(demo, mk(DEFS[0]), keep); demo.state = 'running'; demo.latch = 1; demo.pos = demo.tgt; demo.hAng = demo.target; demo.spin = 1; }
+resetDemo();
 const diff = () => 1 + T / (EASY ? 150 : 70);
 const nextFault = m => EASY ? Math.max(11, rand(22, 38) / diff() / m.fm) : Math.max(4.5, rand(10, 20) / diff() / m.fm);
 const holdNeed = m => m.hold * (EASY ? .75 : 1);
@@ -605,7 +607,7 @@ const TR_CFG = {
   '2': { rise: .5, colD: .14, cover: .66, bubIn: .66, spread: .14, out: 1.15, outDur: .52, smooth: true },
   '3': { rise: .4, colD: .1, cover: .52, bubIn: .52, spread: .1, out: .9, outDur: .42, smooth: true }
 };
-function startTr() {
+function startTr(dest) {
   ac();
   Object.assign(TR, TR_CFG[trStyle]);
   const cw = 26, n = Math.ceil(BW / cw) + 1, cols = [], ph0 = rand(0, TAU);
@@ -629,7 +631,7 @@ function startTr() {
       bub.push({ x, y: y0, y0, r, d: TR.bubIn + rand(0, TR.spread), pt: Infinity, vy: rand(30, 70), fizz: true, ride: own, ph: rand(0, TAU), grow: .06 });
     }
   }
-  tr = { t: 0, started: false, cols, bub, pp: [], snd: 0, st: trStyle, dir: 1, label: 'CLOCKING IN' };
+  tr = { t: 0, started: false, cols, bub, pp: [], snd: 0, st: trStyle, dir: 1, dest: dest || 'game', label: dest === 'title' ? 'CLOCKING OUT' : 'CLOCKING IN' };
   S.magic();
 }
 // end of shift: the same wash, but panels drop from the top and wipe out downward
@@ -661,7 +663,7 @@ function magicDown() {
 function trUpd(dt) {
   if (!tr) return;
   tr.t += dt; tr.snd -= dt;
-  if (!tr.started && tr.t >= TR.cover) { tr.started = true; if (tr.dir === 1) startGame(); }
+  if (!tr.started && tr.t >= TR.cover) { tr.started = true; if (tr.dir === 1) { if (tr.dest === 'title') goTitle(); else startGame(); } }
   for (const q of tr.bub) {
     if (!q.blooped && tr.t >= q.d) { q.blooped = true; if (tr.snd <= 0) { tone(rand(500, 900), .04, 'sine', .035); tr.snd = .04; } }
     if (q.fizz) {
@@ -888,6 +890,15 @@ function drawStars() {
     for (let r = 0; r < rows.length; r++) for (let c = 0; c < rows[r].length; c++) { const ch = rows[r][c]; if (ch === '.') continue; R(x0 + c * px, y0 + r * px, px, px, ch === '2' ? C.white : (on ? '#f3c233' : '#ffe27a')); }
   }
 }
+// back to the front page after a shift
+function goTitle() {
+  mode = 'title'; entry = null; boardOpen = false; howOpen = false; banner = null; boardHL = -1; boardNote = '';
+  for (const m of act) { m.state = 'idle'; m.warn = null; m.holding = false; }
+  act = []; resetDemo(); tt = 0; tStage = -1; fetchBoard();
+}
+const OVER_UI = 'A';   // end of shift: CLOCK OUT + PLAY AGAIN / ADD SCORE buttons (B = old tap prompt + small tab)
+let overBtns = [];
+const clockOut = () => { if (tr) return; boardOpen = false; entry = null; startTr('title'); };
 function startGame() {
   savedThisShift = false; entry = null; boardOpen = false; boardHL = -1; boardNote = '';
   fetchShiftToken();
@@ -1107,7 +1118,10 @@ function down(id, x, y) {
   }
   if (mode === 'over') {
     if (entry || boardOpen) { for (const bt of ovBtns) if (x >= bt.x - 2 && x <= bt.x + bt.w + 2 && y >= bt.y - 2 && y <= bt.y + bt.h + 2) { ac(); bt.fn(); return; } if (boardOpen) boardOpen = false; return; }
-    if (overT > 1.9 && !tr) { if (qualifies(report.sc) && !savedThisShift) { entry = { name: '' }; tone(880, .05, 'square', .04); } else startTr(); }
+    if (overT > 1.9 && !tr) {
+      for (const bt of overBtns) if (x >= bt.x - 3 && x <= bt.x + bt.w + 3 && y >= bt.y - 3 && y <= bt.y + bt.h + 3) { ac(); tone(900, .04, 'square', .04); bt.fn(); return; }
+      if (OVER_UI === 'B') { if (qualifies(report.sc) && !savedThisShift) { entry = { name: '' }; tone(880, .05, 'square', .04); } else startTr(); }
+    }
     return;
   }
   if (hudSnd && x >= hudSnd.x - 3 && x <= hudSnd.x + hudSnd.w + 3 && y >= hudSnd.y - 3 && y <= hudSnd.y + hudSnd.h + 3) { mute = !mute; if (MUS.bus) MUS.bus.gain.setTargetAtTime(mute ? 0 : .5, AC.currentTime, .05); try { localStorage.setItem('spincycle_mute', mute ? '1' : '0'); } catch (e) {} return; }
@@ -2068,7 +2082,12 @@ function drawBoard() {
   }
   for (let i = px + 7; i < px + pw - 7; i += 4) R(i, y0 + 10 * rowH, 2, 1, C.grey);
   txt(boardNote || (boardLoading ? 'LOADING...' : boardOnline ? 'WORLDWIDE TOP 10' : 'TOP 10 ON THIS PHONE'), BW / 2, y0 + 10 * rowH + 4, boardNote ? C.red : C.grey, 1, 'c');
-  if (mode === 'over') obtn(px + 24, py + ph - 30, pw - 48, 20, 'PLAY AGAIN', C.grn, C.ink, 2, () => { boardOpen = false; startTr(); });
+  if (mode === 'over') {
+    if (OVER_UI === 'A') { const gap = 5, bw2 = Math.floor((pw - 14 - gap) / 2), bs = bw2 >= 10 * 8 + 4 ? 2 : 1;
+      obtn(px + 7, py + ph - 30, bw2, 20, 'CLOCK OUT', C.white, C.ink, bs, clockOut);
+      obtn(px + 7 + bw2 + gap, py + ph - 30, pw - 14 - bw2 - gap, 20, 'PLAY AGAIN', C.grn, C.ink, bs, () => { boardOpen = false; startTr(); }); }
+    else { obtn(px + 24, py + ph - 30, pw - 48, 20, 'PLAY AGAIN', C.grn, C.ink, 2, () => { boardOpen = false; startTr(); }); clockTab(); ovBtns.push(overBtns.pop()); }
+  }
   else obtn(px + 24, py + ph - 30, pw - 48, 20, 'CLOSE', C.yel, C.ink, 2, () => { boardOpen = false; });
 }
 const HB_A = [
@@ -2134,7 +2153,8 @@ function drawReport() {
   const lhOf = it => it.hr ? 9 : 5 * it.sc + 4;
   const ph = L.reduce((a2, it) => a2 + lhOf(it), 0) + 18;
   const px = Math.round((BW - pw) / 2);
-  let py = Math.max(6, Math.round((BH - ph - 24) / 2)) + Math.round((1 - e) * BH);
+  const below = OVER_UI === 'A' ? 40 : 24;
+  let py = Math.max(6, Math.round((BH - ph - below) / 2)) + Math.round((1 - e) * BH);
   R(px + 4, py + 4, pw, ph, '#000');
   R(px, py, pw, ph, C.white);
   for (let i = 0; i < pw; i += 6) { R(px + i, py + ph, Math.min(3, pw - i), 3, C.white); if (i + 3 < pw) R(px + i + 3, py - 3, Math.min(3, pw - i - 3), 3, C.white); }
@@ -2146,7 +2166,26 @@ function drawReport() {
     ly += lhOf(it);
   }
   const addIt = qualifies(report.sc) && !savedThisShift;
-  if (overT > 1.9 && blink(2)) stxt(addIt ? 'TAP TO ADD YOUR SCORE' : report.isBest ? 'TAP TO DEFEND IT' : 'TAP TO BEAT ' + best, BW / 2, Math.min(BH - 12, py + ph + 10), addIt ? C.yel : C.grn, RS, 'c');
+  overBtns = [];
+  if (OVER_UI === 'A') {
+    if (overT > 1.9) {
+      const gap = 8, bw2 = Math.floor((pw - gap) / 2), by2 = Math.min(BH - 26, py + ph + 12), bs = bw2 >= 10 * 8 + 6 ? 2 : 1;
+      const go = (x, w, label, fill, fn) => { rr(x - 2, by2 - 2, w + 4, 24, 3, C.ink); rr(x, by2, w, 20, 2, fill); R(x + 3, by2 + 1, w - 6, 1, '#ffffff77'); R(x + 2, by2 + 18, w - 4, 1, '#00000044'); txt(label, x + w / 2, by2 + Math.round((20 - 5 * bs) / 2), C.ink, bs, 'c'); overBtns.push({ x, y: by2, w, h: 20, fn }); };
+      go(px, bw2, 'CLOCK OUT', C.white, clockOut);
+      if (addIt) go(px + bw2 + gap, pw - bw2 - gap, 'ADD SCORE', blink(2) ? C.yel : '#ffd95a', () => { entry = { name: '' }; });
+      else go(px + bw2 + gap, pw - bw2 - gap, 'PLAY AGAIN', C.grn, () => startTr());
+    }
+  } else {
+    if (overT > 1.9 && blink(2)) stxt(addIt ? 'TAP TO ADD YOUR SCORE' : report.isBest ? 'TAP TO DEFEND IT' : 'TAP TO BEAT ' + best, BW / 2, Math.min(BH - 12, py + ph + 10), addIt ? C.yel : C.grn, RS, 'c');
+    if (overT > 1.9) clockTab();
+  }
+}
+// B: a small CLOCK OUT tab in the top-left corner
+function clockTab() {
+  const w = 58, hh = 15, x = 6, y = HUD + 4;
+  rr(x - 1, y - 1, w + 2, hh + 2, 3, C.ink); rr(x, y, w, hh, 2, C.white);
+  txt('< CLOCK OUT', x + w / 2, y + 5, C.ink, 1, 'c');
+  overBtns.push({ x, y, w, h: hh, fn: clockOut });
 }
 
 /* ---- no laptops at the laundromat ---- */
